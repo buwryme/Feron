@@ -2,6 +2,10 @@
 
 #include "boot/mb2.hpp"
 #include "cpu/idt/handlers.hpp"
+#include "cpu/irq/enable.hpp"
+#include "cpu/irq/irq.hpp"
+#include "cpu/irq/pic.hpp"
+#include "cpu/irq/pit.hpp"
 #include "tty/tty.hpp"
 #include "runtime/heap_init.hpp"
 #include "serial.hpp"
@@ -28,6 +32,17 @@ namespace feron {
         feron::cpu::idt::handlers::register_exceptions();
         feron::cpu::idt::load_idt();
         tty::writeln("IDT registered and loaded.");
+
+        cpu::irq::pic::pic_remap(0x20, 0x28);
+        cpu::irq::pic::pic_unmask(0); // IRQ0: PIT
+        cpu::irq::pic::pic_unmask(1); // IRQ1: keyboard
+        tty::writeln("PIC remapped, IRQ0/IRQ1 unmasked.");
+
+        feron::cpu::irq::register_irqs();
+
+        pit_set_frequency(60);
+
+        enable_interrupts();
 
         // Guaranteed #UD: Invalid Opcode (ISR 6) -- WORKING
         // tty::writeln("Triggering invalid opcode (ISR 6)...");

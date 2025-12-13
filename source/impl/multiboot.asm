@@ -116,6 +116,7 @@ long_mode_entry:
     mov rsi, rbx                  ; arg2: mbi pointer (identity mapped)
 
     extern kernel_main
+    sti
     call kernel_main
 
 .hang:
