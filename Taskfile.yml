@@ -12,7 +12,8 @@ vars:
   linkerimpl: source/impl/linker.ld
   buildFolder: build
   binaryName: feron.kernel
-  tmpbin: bin.tmp
+  tmpFolder: build/tmp
+  isoName: feron.iso
 
 env:
   DATE:
@@ -24,19 +25,22 @@ tasks:
     cmds:
       - echo "build started at $DATE"
       - mkdir -p "{{.buildFolder}}/$DATE"
+      - mkdir -p "{{.tmpFolder}}"
       - |
         set -e
         # assemble multiboot header
-        {{.as}} -f elf64 {{.mbheaderimpl}} -o multiboot_header.o
+        {{.as}} -f elf64 {{.mbheaderimpl}} -o {{.tmpFolder}}/multiboot_header.o
         # compile cpp files
-        {{.cc}} {{.args}} -c {{.input}} -o entry.o
-        {{.cc}} {{.args}} -c {{.cpprtimpl}} -o cpp_runtime.o
+        {{.cc}} {{.args}} -c {{.input}} -o {{.tmpFolder}}/entry.o
+        {{.cc}} {{.args}} -c {{.cpprtimpl}} -o {{.tmpFolder}}/cpp_runtime.o
         # link everything
-        {{.ld}} -nostdlib -T {{.linkerimpl}} multiboot_header.o entry.o cpp_runtime.o -o {{.tmpbin}}
-        # move binary
-        mv "{{.tmpbin}}" "{{.buildFolder}}/$DATE/{{.binaryName}}"
+        {{.ld}} -nostdlib -T {{.linkerimpl}} \
+          {{.tmpFolder}}/multiboot_header.o \
+          {{.tmpFolder}}/entry.o \
+          {{.tmpFolder}}/cpp_runtime.o \
+          -o {{.buildFolder}}/$DATE/{{.binaryName}}
       - echo "linked -> {{.buildFolder}}/$DATE/{{.binaryName}}"
-      - rm -f multiboot_header.o entry.o cpp_runtime.o
+      - rm -rf "{{.tmpFolder}}"   # clean up temp folder after success
       - echo "done"
     silent: true
 
@@ -44,13 +48,14 @@ tasks:
     desc: "run latest kernel binary via GRUB ISO (qemu)"
     cmds:
       - echo "building GRUB ISO..."
+      - mkdir -p "{{.buildFolder}}/$(ls -t {{.buildFolder}} | head -1)"
       - rm -rf iso
       - mkdir -p iso/boot/grub
       - cp {{.buildFolder}}/$(ls -t {{.buildFolder}} | head -1)/{{.binaryName}} iso/boot/
       - cp source/isoroot/boot/grub/grub.cfg iso/boot/grub/
-      - grub-mkrescue -o feron.iso iso
-      - echo "running feron.iso..."
-      - qemu-system-x86_64 -cdrom feron.iso -boot order=d -serial stdio -no-reboot -m 512M
+      - grub-mkrescue -o {{.buildFolder}}/$(ls -t {{.buildFolder}} | head -1)/{{.isoName}} iso
+      - echo "running {{.isoName}}..."
+      - qemu-system-x86_64 -cdrom {{.buildFolder}}/$(ls -t {{.buildFolder}} | head -1)/{{.isoName}} -boot order=d -serial stdio -no-reboot -m 512M
     silent: true
 
   clean:
@@ -58,6 +63,7 @@ tasks:
     cmds:
       - echo "cleaning build artifacts..."
       - rm -rf build/**
+      - rm -rf build/tmp
       - echo "cleaning dir2txt artifacts..."
       - rm -f ._*.txt
       - echo "done"
