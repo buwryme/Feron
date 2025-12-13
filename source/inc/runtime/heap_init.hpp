@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../boot/mb2.hpp"
-#include "malloc.hpp"
+#include "impl/mm/kernel_heap_init.hpp"
 #include "../tty/tty.hpp"
 #include <cstdint>
 

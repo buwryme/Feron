@@ -8,3 +8,6 @@ CompileFlags:
     -fno-stack-protector,
     -mgeneral-regs-only
   ]
+
+Diagnostics:
+  Suppress: [unused-includes]
