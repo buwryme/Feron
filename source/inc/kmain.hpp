@@ -2,7 +2,7 @@
 
 #include "boot/mb2.hpp"
 #include "tty/tty.hpp"
-#include "runtime/malloc.hpp"
+#include "runtime/heap_init.hpp"
 #include "serial.hpp"
 #include <cstdint>
 
@@ -16,24 +16,7 @@ namespace feron {
 
         auto info = feron::boot::mb2::parse(mbi);
 
-        // Try to initialize heap from first available mmap region (type == 1)
-        if (info.mmap && info.mmap_count > 0) {
-            for (uint32_t i = 0; i < info.mmap_count; ++i) {
-                auto& e = info.mmap[i];
-                if (e.type == 1 && e.len > 0) {
-                    // choose a safe offset inside the region (skip first page)
-                    void* heap_addr = reinterpret_cast<void*>(static_cast<uintptr_t>(e.addr + 0x1000));
-                    std::size_t heap_size = static_cast<std::size_t>(e.len - 0x1000);
-                    // clamp to something reasonable if needed
-                    if (heap_size > 0x10000000) heap_size = 0x10000000; // 256MB cap
-                    kernel_heap_init(heap_addr, heap_size);
-                    tty::write("kernel heap initialized\n");
-                    break;
-                }
-            }
-        } else {
-            tty::write("no mmap available to init heap\n");
-        }
+        feron::runtime::init_heap_from_mmap(info);
 
         // Small heap self-test: allocate, write, free
         void* a = nullptr;
