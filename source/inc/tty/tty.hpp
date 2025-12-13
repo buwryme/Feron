@@ -144,4 +144,20 @@ namespace feron::tty {
         write_char('\n', fg, bg);
         serial::write_char('\n');
     }
+
+    inline void write_dec(int val) {
+        char buf[32];
+        int i = 30;
+        buf[31] = '\0';
+        if (val == 0) {
+            buf[i] = '0';
+            feron::tty::write(&buf[i]);
+            return;
+        }
+        while (val > 0 && i >= 0) {
+            buf[i--] = '0' + (val % 10);
+            val /= 10;
+        }
+        feron::tty::write(&buf[i+1]);
+    }
 }

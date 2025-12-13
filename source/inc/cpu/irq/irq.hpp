@@ -4,6 +4,10 @@
 #include "../idt/idt.hpp"
 #include "../irq/pic.hpp"
 #include "../../tty/tty.hpp"
+#include "../../events/tick.hpp"
+#include "../../events/second.hpp"
+#include "../../events/minute.hpp"
+#include "../../events/hour.hpp"
 #include "keyboard.hpp"
 
 // IRQ vectors after remap: 32..47
@@ -20,6 +24,13 @@ namespace feron::cpu::irq {
     void isr_irq0(InterruptFrame* frame) {
         static uint64_t ticks = 0;
         ++ticks;
+
+        feron::events::tick.get()();
+
+        if (ticks % 60 == 0) feron::events::second.get()();
+        if (ticks % (60 * 60) == 0) feron::events::minute.get()();
+        if (ticks % (60 * 60 * 60) == 0) feron::events::hour.get()();
+
         pic::pic_eoi(0);
     }
 

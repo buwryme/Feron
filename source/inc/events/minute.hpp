@@ -1,7 +1,7 @@
 #pragma once
 
 namespace feron::events {
-    struct tick {
+    struct minute {
         using f = void(*)();
 
     private:
@@ -18,5 +18,5 @@ namespace feron::events {
         inline f get() {
             return registered_fn ? registered_fn : &noop;
         }
-    } inline tick;
+    } inline minute;
 }

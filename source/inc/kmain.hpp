@@ -2,7 +2,7 @@
 
 #include "boot/mb2.hpp"
 #include "cpu/idt/handlers.hpp"
-#include "cpu/irq/enable.hpp"
+#include "cpu/irq/toggler.hpp"
 #include "cpu/irq/irq.hpp"
 #include "cpu/irq/pic.hpp"
 #include "cpu/irq/pit.hpp"
@@ -12,6 +12,20 @@
 #include "cpu/gdt.hpp"        // GDT loader (Option B)
 #include "cpu/idt/idt.hpp"    // IDT setup + register_exceptions
 #include <cstdint>
+
+int uptime = 0;
+
+inline void my_tick() {
+    // dummy for less on-screen garbage
+    // feron::tty::write("meow!!!");
+}
+
+inline void my_second() {
+    uptime++;
+    feron::tty::write("second passed... uptime = ");
+    feron::tty::write_dec(uptime);   // prints as hex
+    feron::tty::write("\n");
+}
 
 namespace feron {
     inline void kmain(uint32_t magic, void* mbi) {
@@ -33,6 +47,8 @@ namespace feron {
         feron::cpu::idt::load_idt();
         tty::writeln("IDT registered and loaded.");
 
+        feron::events::second.register_fn(reinterpret_cast<void*>(&my_second));
+
         cpu::irq::pic::pic_remap(0x20, 0x28);
         cpu::irq::pic::pic_unmask(0); // IRQ0: PIT
         cpu::irq::pic::pic_unmask(1); // IRQ1: keyboard
@@ -44,28 +60,6 @@ namespace feron {
 
         enable_interrupts();
 
-        // Guaranteed #UD: Invalid Opcode (ISR 6) -- WORKING
-        // tty::writeln("Triggering invalid opcode (ISR 6)...");
-        // asm volatile("ud2");
-
-        // Guaranteed #DE: Divide Error (ISR 0) -- WORKING
-        // tty::writeln("Triggering divide-by-zero (ISR 0)...");
-        // asm volatile(
-        //     "mov $1, %%rax\n\t"
-        //     "xor %%rdx, %%rdx\n\t"
-        //     "xor %%rcx, %%rcx\n\t"
-        //     "idiv %%rcx\n\t"
-        //     :
-        //     :
-        //     : "rax", "rdx", "rcx"
-        // );
-
-        // Guaranteed #PF: Page Fault (ISR 14) -- WORKING
-        // tty::writeln("Triggering page fault (ISR 14)...");
-        // volatile uint64_t* bad = reinterpret_cast<volatile uint64_t*>(0x00400000); // 4 MiB
-        // *bad = 0xDEADBEEF;
-
-        // Halt if handlers return (they shouldn't)
-        for (;;) asm volatile("hlt");
+        return;
     }
 }
