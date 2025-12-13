@@ -1,0 +1,30 @@
+# feron
+
+"Feron"/"feronOS" is a hobbyist operating system (kernel as of now), written in modern C++20.
+it utilizes a freestanding runtime, boots up using Multiboot2, sets up long mode,
+... initializes a custom heap allocator and provides VGA + serial text output.
+
+## features (as of now):
+- Multiboot2 header, bootable via GRUB
+- 64-bit long mode entry
+- VGA text console with automatically managed cursor
+- serial console output (`COM1`) for debugging
+- freestanding C++ runtime
+- heap initialization from the memory map given by Multiboot
+- kernel entry point (`kmain`)
+
+## how to build & run:
+
+requirements:
+- `clang++`, `nasm`, `ld.ldd` for compiling
+- `grub-mkrescue`, `xorisso` for making the bootable ISO
+- [`task`](https://taskfile.dev) for task automation
+
+build the kernel:
+```bash
+task build
+```
+run:
+```bash
+task run
+```
