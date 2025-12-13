@@ -19,7 +19,7 @@ feron's build process is pretty straightforward.
 ...when building, a unique build timestamp is made.
 ### requirements:
 - `clang++`, `nasm`, `ld.lld` for compiling;
-- `grub-mkrescue`, `xorisso` for .iso building
+- `grub-mkrescue`, `xorriso` for .iso building
 - [`task`](https://taskfile.dev) for task automation
 
 to build, run `task build`.
