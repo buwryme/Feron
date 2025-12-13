@@ -22,3 +22,4 @@ It utilizes a freestanding runtime, boots via Multiboot2, sets up long mode, ini
 ### Build the kernel
 ```bash
 task build
+```
