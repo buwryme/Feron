@@ -1,0 +1,79 @@
+version: '3'
+
+vars:
+  cc: clang++
+  as: nasm
+  ld: ld.lld
+  cppver: "20"
+  args: -std=c++{{.cppver}} -ffreestanding -nostdlib -fno-exceptions -fno-rtti -fno-stack-protector
+  input: source/entry.cpp
+  cpprtimpl: source/impl/cpp_runtime.cpp
+  mbheaderimpl: source/impl/multiboot.asm
+  linkerimpl: source/impl/linker.ld
+  buildFolder: build
+  binaryName: feron.kernel
+  tmpbin: bin.tmp
+
+env:
+  DATE:
+    sh: date '+%m-%d-%y-%H-%M'
+
+tasks:
+  build:
+    desc: "compile kernel with multiboot header -> build binary"
+    cmds:
+      - echo "build started at $DATE"
+      - mkdir -p "{{.buildFolder}}/$DATE"
+      - |
+        set -e
+        # assemble multiboot header
+        {{.as}} -f elf64 {{.mbheaderimpl}} -o multiboot_header.o
+        # compile cpp files
+        {{.cc}} {{.args}} -c {{.input}} -o entry.o
+        {{.cc}} {{.args}} -c {{.cpprtimpl}} -o cpp_runtime.o
+        # link everything
+        {{.ld}} -nostdlib -T {{.linkerimpl}} multiboot_header.o entry.o cpp_runtime.o -o {{.tmpbin}}
+        # move binary
+        mv "{{.tmpbin}}" "{{.buildFolder}}/$DATE/{{.binaryName}}"
+      - echo "linked -> {{.buildFolder}}/$DATE/{{.binaryName}}"
+      - rm -f multiboot_header.o entry.o cpp_runtime.o
+      - echo "done"
+    silent: true
+
+  run:
+    desc: "run latest kernel binary via GRUB ISO (qemu)"
+    cmds:
+      - echo "building GRUB ISO..."
+      - rm -rf iso
+      - mkdir -p iso/boot/grub
+      - cp {{.buildFolder}}/$(ls -t {{.buildFolder}} | head -1)/{{.binaryName}} iso/boot/
+      - cp source/isoroot/boot/grub/grub.cfg iso/boot/grub/
+      - grub-mkrescue -o feron.iso iso
+      - echo "running feron.iso..."
+      - qemu-system-x86_64 -cdrom feron.iso -boot order=d -serial stdio -no-reboot -m 512M
+    silent: true
+
+  clean:
+    desc: "clean build and dump files"
+    cmds:
+      - echo "cleaning build artifacts..."
+      - rm -rf build/**
+      - echo "cleaning dir2txt artifacts..."
+      - rm -f ._*.txt
+      - echo "done"
+    silent: true
+
+  dir2txt:
+    desc: "dump project into .txt"
+    cmds:
+      - dir2txt .
+      - echo "done"
+    silent: true
+
+  txtclean:
+    desc: "clean dumped .txt files"
+    cmds:
+      - echo "cleaning dir2txt artifacts..."
+      - rm -f ._*.txt
+      - echo "done"
+    silent: true
