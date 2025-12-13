@@ -4,18 +4,21 @@
 namespace feron::serial {
 
     // I/O port helpers (use same outb convention as tty)
-    static inline void outb(uint16_t port, uint8_t val) {
+    static inline __attribute__((no_caller_saved_registers))
+    void outb(uint16_t port, uint8_t val) {
         asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
     }
 
-    static inline uint8_t inb(uint16_t port) {
+    static inline __attribute__((no_caller_saved_registers))
+    uint8_t inb(uint16_t port) {
         uint8_t val;
         asm volatile ("inb %1, %0" : "=a"(val) : "Nd"(port));
         return val;
     }
 
     // Initialize COM1 (0x3F8) for 115200, 8N1
-    inline void init() {
+    inline __attribute__((no_caller_saved_registers))
+    void init() {
         const uint16_t port = 0x3F8;
         outb(port + 1, 0x00);    // disable all interrupts
         outb(port + 3, 0x80);    // enable DLAB (set baud rate divisor)
@@ -26,19 +29,22 @@ namespace feron::serial {
         outb(port + 4, 0x0B);    // IRQs enabled, RTS/DSR set
     }
 
-    inline bool is_transmit_empty() {
+    inline __attribute__((no_caller_saved_registers))
+    bool is_transmit_empty() {
         const uint16_t port = 0x3F8;
         return (inb(port + 5) & 0x20) != 0;
     }
 
-    inline void write_char(char c) {
+    inline __attribute__((no_caller_saved_registers))
+    void write_char(char c) {
         const uint16_t port = 0x3F8;
         // wait for transmitter ready
         while (!is_transmit_empty()) { asm volatile("pause"); }
         outb(port, static_cast<uint8_t>(c));
     }
 
-    inline void write(const char* s) {
+    inline __attribute__((no_caller_saved_registers))
+    void write(const char* s) {
         if (!s) return;
         while (*s) {
             if (*s == '\n') {

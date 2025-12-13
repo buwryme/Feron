@@ -1,0 +1,31 @@
+CompileFlags:
+  Add: [
+    -std=c++20,
+    -ffreestanding,
+    -nostdlib,
+    -fno-exceptions,
+    -fno-rtti,
+    -fno-stack-protector,
+    -mgeneral-regs-only
+  ]
+
+# Optional: set the default C++ standard for all files
+FallbackFlags: [-std=c++20]
+
+# Indexing options
+Index:
+  Background: true
+  StandardLibrary: true
+
+# Diagnostics tweaks
+Diagnostics:
+  ClangTidy: true
+  ClangTidyChecks: '*'
+  Suppress: [
+    "unused-variable",
+    "unused-parameter"
+  ]
+
+# Path mappings (adjust if needed)
+CompileFlags:
+  Remove: [-W*]   # strip warnings from compile_commands.json if present

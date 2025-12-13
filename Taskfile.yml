@@ -5,7 +5,7 @@ vars:
   as: nasm
   ld: ld.lld
   cppver: "20"
-  args: -std=c++{{.cppver}} -ffreestanding -nostdlib -fno-exceptions -fno-rtti -fno-stack-protector
+  args: -std=c++{{.cppver}} -ffreestanding -nostdlib -fno-exceptions -fno-rtti -fno-stack-protector -mgeneral-regs-only
   input: source/entry.cpp
   cpprtimpl: source/impl/cpp_runtime.cpp
   mbheaderimpl: source/impl/multiboot.asm
