@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../runtime/heap_init.hpp"
 #include "config.hpp"
 #include "paging.hpp"
 #include "pfa.hpp"
@@ -25,5 +26,7 @@ namespace feron::mm {
             0,
             feron::mm::paging::P_PRESENT | feron::mm::paging::P_RW
         );
+
+        feron::runtime::init_heap_from_mmap(info);
     }
 }

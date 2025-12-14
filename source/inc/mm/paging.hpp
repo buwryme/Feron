@@ -16,7 +16,49 @@ namespace feron::mm::paging {
 
     inline void invlpg(uint64_t va) { asm volatile("invlpg (%0)" : : "r"(va) : "memory"); }
 
-    // Map leaf VA->PA (create tables as needed), writing table contents via temporary mappings
+    // Scratch helpers MUST be declared before any use
+    inline uint64_t scratch_va = 0;
+
+    inline void* scratch_ptr() {
+        return reinterpret_cast<void*>(scratch_va);
+    }
+
+    inline void unmap_scratch() {
+        if (!PML4_va || scratch_va == 0) return;
+
+        auto idx = [](uint64_t v, int s){ return (v >> s) & 0x1FF; };
+        int i4 = idx(scratch_va, 39), i3 = idx(scratch_va, 30), i2 = idx(scratch_va, 21), i1 = idx(scratch_va, 12);
+
+        // Walk to the PT that contains scratch_va and clear the leaf
+        uint64_t pml4e = PML4_va[i4];
+        if (!(pml4e & P_PRESENT)) return;
+        uint64_t pdpt_pa = (pml4e & ~0xFFFull);
+
+        // Map PDPT page into scratch to read its entry
+        if (!scratch_va) return;
+        // We re-use map_scratch once available; if it fails, just return quietly
+        extern bool map_scratch(uint64_t pa, uint64_t flags);
+        if (!map_scratch(pdpt_pa, P_PRESENT | P_RW)) return;
+        auto PDPT = reinterpret_cast<uint64_t*>(scratch_ptr());
+        uint64_t pdpte = PDPT[i3];
+        uint64_t pd_pa = (pdpte & P_PRESENT) ? (pdpte & ~0xFFFull) : 0;
+        // Clear scratch mapping of PDPT
+        // We can simply proceed; scratch leaf will be overwritten below.
+
+        if (!pd_pa) return;
+        if (!map_scratch(pd_pa, P_PRESENT | P_RW)) return;
+        auto PD = reinterpret_cast<uint64_t*>(scratch_ptr());
+        uint64_t pde = PD[i2];
+        uint64_t pt_pa = (pde & P_PRESENT) ? (pde & ~0xFFFull) : 0;
+
+        if (!pt_pa) return;
+        if (!map_scratch(pt_pa, P_PRESENT | P_RW)) return;
+        auto PT = reinterpret_cast<uint64_t*>(scratch_ptr());
+        PT[i1] = 0;
+        invlpg(scratch_va);
+    }
+
+    // Forward declare walk_create before map_page uses it
     uint64_t* walk_create(uint64_t va);
 
     inline bool map_page(uint64_t va, uint64_t pa, uint64_t flags = P_PRESENT | P_RW) {
@@ -27,31 +69,21 @@ namespace feron::mm::paging {
         return true;
     }
 
-    // Temporary map/unmap helpers: get a VA page from valloc for scratch work
-    inline uint64_t scratch_va = 0;
-
+    // Map a physical page at scratch_va so we can write its contents
     inline bool map_scratch(uint64_t pa, uint64_t flags = P_PRESENT | P_RW) {
         if (scratch_va == 0) {
             scratch_va = feron::mm::valloc::alloc_range(feron::mm::pfa::PAGE_SIZE);
             if (scratch_va == 0) return false;
         }
+        if (!PML4_va) {
+            // Pre-CR3 path: we cannot create a mapping via walk_create yet.
+            // Callers should only use scratch pre-CR3 for physical writes after identity is set.
+            return false;
+        }
         return map_page(scratch_va, pa, flags);
     }
-    inline void* scratch_ptr() { return reinterpret_cast<void*>(scratch_va); }
-    inline void unmap_scratch() {
-        // Clear the leaf without freeing scratch_va, so we can reuse it.
-        auto idx = [](uint64_t v, int s){ return (v >> s) & 0x1FF; };
-        int i4 = idx(scratch_va, 39), i3 = idx(scratch_va, 30), i2 = idx(scratch_va, 21), i1 = idx(scratch_va, 12);
-        uint64_t pml4e = PML4_va[i4]; if (!(pml4e & P_PRESENT)) return;
-        auto pdpt_va = reinterpret_cast<uint64_t*>( (pml4e & ~0xFFFull) ); // mapped VA for PDPT (see below)
-        // We will always touch tables via scratch; leaf clearing is done by mapping PT page into scratch, but since we know scratch_va’s PT entry,
-        // it’s simpler to just overwrite the PTE via the same walk_create path. For brevity, re-map scratch to a zero PA or write zero through PT:
-        // Easiest: re-walk to the leaf and write 0:
-        auto leaf = walk_create(scratch_va);
-        if (leaf) { *leaf = 0; invlpg(scratch_va); }
-    }
 
-    // Allocate and zero a page table using scratch map (no identity)
+    // Allocate and zero a page table using scratch map (post-CR3)
     inline uint64_t alloc_table_pa() {
         uint64_t pa = feron::mm::pfa::alloc_page();
         if (!pa) return 0;
@@ -66,7 +98,6 @@ namespace feron::mm::paging {
         auto idx = [](uint64_t v, int s){ return (v >> s) & 0x1FF; };
         int i4 = idx(va, 39), i3 = idx(va, 30), i2 = idx(va, 21), i1 = idx(va, 12);
 
-        // PML4_va must be a real VA we can dereference (we map it permanently)
         if (!PML4_va) return nullptr;
 
         // PDPT
@@ -106,31 +137,60 @@ namespace feron::mm::paging {
         if (!map_scratch(pt_pa)) return nullptr;
         auto PT = reinterpret_cast<uint64_t*>(scratch_ptr());
         uint64_t* leaf = &PT[i1];
-        // Caller writes then we unmap scratch; return a transient pointer valid until unmap.
         return leaf;
     }
 
-    // Initialize paging with caller-provided VA pool and optional initial maps
+    // Initialize paging with safe 4 MiB identity before CR3 switch
     inline void init(uint64_t va_pool_base, uint64_t va_pool_size,
                      uint64_t initial_map_va = 0, uint64_t initial_map_pa = 0, uint64_t initial_map_size = 0,
                      uint64_t leaf_flags = P_PRESENT | P_RW) {
-        // Initialize VA allocator pool (caller decides where/how big)
         feron::mm::valloc::init(va_pool_base, va_pool_size);
 
-        // Create PML4
-        PML4_pa = alloc_table_pa();
-        if (!PML4_pa) return;
+        // Create tables physically and zero via current identity (from trampoline)
+        auto memzero_phys = [](uint64_t pa){
+            volatile uint8_t* p = reinterpret_cast<volatile uint8_t*>(pa);
+            for (std::size_t i = 0; i < feron::mm::pfa::PAGE_SIZE; ++i) p[i] = 0;
+        };
 
-        // Permanently map PML4 itself into the VA pool so we can dereference entries
-        uint64_t pml4_va_page = feron::mm::valloc::alloc_range(feron::mm::pfa::PAGE_SIZE);
-        if (!pml4_va_page) return;
-        map_page(pml4_va_page, PML4_pa, P_PRESENT | P_RW);
-        PML4_va = reinterpret_cast<uint64_t*>(pml4_va_page);
+        PML4_pa = feron::mm::pfa::alloc_page();
+        uint64_t pdpt_pa = feron::mm::pfa::alloc_page();
+        uint64_t pd_pa   = feron::mm::pfa::alloc_page();
+        uint64_t pt_pa   = feron::mm::pfa::alloc_page();
+        if (!PML4_pa || !pdpt_pa || !pd_pa || !pt_pa) return;
 
-        // Load CR3 with physical root
+        memzero_phys(PML4_pa);
+        memzero_phys(pdpt_pa);
+        memzero_phys(pd_pa);
+        memzero_phys(pt_pa);
+
+        // Wire PML4[0] -> PDPT, PDPT[0] -> PD, PD[0] -> PT
+        volatile uint64_t* PML4phys = reinterpret_cast<volatile uint64_t*>(PML4_pa);
+        volatile uint64_t* PDPTphys = reinterpret_cast<volatile uint64_t*>(pdpt_pa);
+        volatile uint64_t* PDphys   = reinterpret_cast<volatile uint64_t*>(pd_pa);
+        volatile uint64_t* PTphys   = reinterpret_cast<volatile uint64_t*>(pt_pa);
+
+        PML4phys[0] = (pdpt_pa & ~0xFFFull) | P_PRESENT | P_RW;
+        PDPTphys[0] = (pd_pa   & ~0xFFFull) | P_PRESENT | P_RW;
+        PDphys[0]   = (pt_pa   & ~0xFFFull) | P_PRESENT | P_RW;
+
+        // Identity map 0..4 MiB (4 KiB pages)
+        for (uint64_t off = 0, i = 0; i < 1024; ++i, off += feron::mm::pfa::PAGE_SIZE) {
+            PTphys[i] = (off & ~0xFFFull) | leaf_flags;
+        }
+
+        // Load CR3 to the new PML4
         asm volatile("mov %0, %%cr3" : : "r"(PML4_pa) : "memory");
 
-        // Optional: map an initial range (no hardcoded sizes—caller chooses)
+        // Permanently map PML4 into VA space and set PML4_va
+        uint64_t pml4_va_page = feron::mm::valloc::alloc_range(feron::mm::pfa::PAGE_SIZE);
+        if (pml4_va_page == 0) return;
+
+        // Use identity PT to map PML4_pa at pml4_va_page
+        uint64_t slot = (pml4_va_page >> 12) & 0x3FF;
+        PTphys[slot] = (PML4_pa & ~0xFFFull) | P_PRESENT | P_RW;
+        PML4_va = reinterpret_cast<uint64_t*>(pml4_va_page);
+
+        // Optional initial map
         if (initial_map_size) {
             uint64_t va = initial_map_va;
             uint64_t pa = initial_map_pa;

@@ -23,11 +23,32 @@ inline void my_tick() {
     // feron::tty::write("meow!!!");
 }
 
+inline void trigger_pf_unmap_then_touch() {
+    uint64_t pa = feron::mm::pfa::alloc_page();
+    uint64_t va = feron::mm::valloc::alloc_range(feron::mm::pfa::PAGE_SIZE);
+    feron::mm::paging::map_page(va, pa, feron::mm::paging::P_PRESENT | feron::mm::paging::P_RW);
+
+    // Unmap the leaf
+    auto leaf = feron::mm::paging::walk_create(va);
+    if (leaf) {
+        *leaf = 0;
+        feron::mm::paging::invlpg(va);
+    }
+
+    // Touch it -> #PF
+    volatile uint8_t* bad = reinterpret_cast<volatile uint8_t*>(va);
+    *bad = 0x42;
+}
+
 inline void my_second() {
     uptime++;
     feron::tty::write("second passed... uptime = ");
     feron::tty::write_dec(uptime);
     feron::tty::write("\n");
+
+    // if (uptime == 5) {
+    //     trigger_pf_unmap_then_touch();
+    // }
 }
 
 inline void my_minute() {
@@ -42,11 +63,12 @@ namespace feron {
 
         // Parse multiboot info and init heap
         auto info = feron::boot::mb2::parse(mbi);
-        feron::runtime::init_heap_from_mmap(info);
 
         // Initialize memory management
         mm::init(info);
-        tty::writeln("paging subsystem initialized;");
+        tty::writeln("memory subsystems initialized;");
+
+        tty::writeln("kernel heap initialized;");
 
         cpu::init();
         tty::writeln("cpu subsystems initialized;");
@@ -57,7 +79,7 @@ namespace feron {
 
         feron::cpu::irq::register_irqs();
 
-        pit_set_frequency(60);
+        cpu::irq::pit::pit_set_frequency(60);
 
         enable_interrupts();
 
