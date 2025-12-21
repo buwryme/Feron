@@ -11,6 +11,8 @@ namespace feron::mm {
     inline void init(boot::mb2::info_t info) {
         feron::mm::pfa::init(info);
 
+        feron::runtime::init_heap_from_mmap(info);
+
         feron::mm::valloc::init
         (
             feron::mm::config::va_pool_base,
@@ -26,7 +28,5 @@ namespace feron::mm {
             0,
             feron::mm::paging::P_PRESENT | feron::mm::paging::P_RW
         );
-
-        feron::runtime::init_heap_from_mmap(info);
     }
 }

@@ -30,8 +30,12 @@ tasks:
         set -e
         # assemble multiboot header
         {{.as}} -f elf64 {{.mbheaderimpl}} -o {{.tmpFolder}}/multiboot_header.o
-        # compile cpp files
-        {{.cc}} {{.args}} -c {{.input}} -o {{.tmpFolder}}/entry.o
+        # compile cpp files WITH metadata injected
+        {{.cc}} {{.args}} \
+          -DBUILD_COMPILER="\"$({{.cc}} --version | head -1)\"" \
+          -DBUILD_OS="\"$(uname -s)\"" \
+          -DBUILD_HOST="\"$(hostname)\"" \
+          -c {{.input}} -o {{.tmpFolder}}/entry.o
         {{.cc}} {{.args}} -c {{.cpprtimpl}} -o {{.tmpFolder}}/cpp_runtime.o
         # link everything
         {{.ld}} -nostdlib -T {{.linkerimpl}} \
